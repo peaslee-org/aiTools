@@ -113,3 +113,18 @@ def test_texture_mesh_passes_decimate_only_when_given(tmp_path):
     texture_mesh(r, tmp_path, tmp_path / "s.mvs", tmp_path / "m.ply", decimate=0.396)
     cmd = r.calls[1][0]
     assert cmd[cmd.index("--decimate") + 1] == "0.396"
+
+
+def test_densify_without_mask_path_passes_no_mask_flags(tmp_path):
+    r = FakeRunner()
+    densify(r, tmp_path, tmp_path / "scene.mvs")
+    cmd = r.calls[0][0]
+    assert "--mask-path" not in cmd and "--ignore-mask-label" not in cmd
+
+
+def test_densify_with_mask_path_adds_mask_flags(tmp_path):
+    r = FakeRunner()
+    densify(r, tmp_path, tmp_path / "scene.mvs", mask_path=tmp_path / "masks")
+    cmd = r.calls[0][0]
+    assert cmd[cmd.index("--mask-path") + 1] == str(tmp_path / "masks")
+    assert cmd[cmd.index("--ignore-mask-label") + 1] == "0"

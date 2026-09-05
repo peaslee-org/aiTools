@@ -26,10 +26,14 @@ def _cuda_device(use_gpu: bool) -> list[str]:
     return ["--cuda-device", "-1" if use_gpu else "-2"]
 
 
-def densify(runner, dense: Path, scene: Path, use_gpu: bool = True) -> Path:
+def densify(runner, dense: Path, scene: Path, use_gpu: bool = True, mask_path: Path | None = None) -> Path:
     out = dense / "scene_dense.mvs"
-    runner.run(["DensifyPointCloud", str(scene), "-w", str(dense), "-o", str(out), "--resolution-level", "2",
-                *_cuda_device(use_gpu)], cwd=dense, tool="DensifyPointCloud")
+    cmd = ["DensifyPointCloud", str(scene), "-w", str(dense), "-o", str(out), "--resolution-level", "2"]
+    if mask_path is not None:
+        # <image stem>.mask.png under mask_path; pixels equal to the label are skipped by the
+        # depth-map estimator (masks are nearest-resized to the depth-map size). 0 = background.
+        cmd += ["--mask-path", str(mask_path), "--ignore-mask-label", "0"]
+    runner.run([*cmd, *_cuda_device(use_gpu)], cwd=dense, tool="DensifyPointCloud")
     return out
 
 

@@ -18,7 +18,8 @@ class PhotogrammetryRepository:
         self.db = db
 
     async def create_job(
-        self, job_id: UUID, user_id: str, name: str, image_count: int, input_prefix: str
+        self, job_id: UUID, user_id: str, name: str, image_count: int, input_prefix: str,
+        remove_background: bool = False,
     ) -> PhotogrammetryJob:
         job = PhotogrammetryJob(
             id=job_id,
@@ -27,6 +28,7 @@ class PhotogrammetryRepository:
             status="pending",
             image_count=image_count,
             input_prefix=input_prefix,
+            remove_background=remove_background,
         )
         self.db.add(job)
         await self.db.flush()

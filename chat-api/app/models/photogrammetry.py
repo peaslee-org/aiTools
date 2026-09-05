@@ -49,3 +49,8 @@ class PhotogrammetryJob(UUIDMixin, Base):
     is_public: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Mask the backdrop out of the dense stage (worker: pipeline/masks.py). Off by default;
+    # the sample scan and the mock never set it.
+    remove_background: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )

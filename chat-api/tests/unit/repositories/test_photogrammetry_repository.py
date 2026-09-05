@@ -164,3 +164,12 @@ async def test_delete_job_noop_when_missing():
     repo, db = make_repo(one_or_none=None)
     await repo.delete_job(uuid4())
     db.delete.assert_not_awaited()
+
+
+async def test_create_job_stores_remove_background():
+    repo, db = make_repo()
+    job = await repo.create_job(job_id=uuid4(), user_id="u", name="n", image_count=5,
+                                input_prefix="p/", remove_background=True)
+    assert job.remove_background is True
+    default = await repo.create_job(job_id=uuid4(), user_id="u", name="n", image_count=5, input_prefix="p/")
+    assert default.remove_background is False

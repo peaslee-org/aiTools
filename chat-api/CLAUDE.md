@@ -93,7 +93,7 @@ app/
   models/          SQLAlchemy ORM models (inherit from app/models/base.py)
     conversation.py
     transcription.py  SpeakerProfile, SpeakerSample (pgvector embedding), TranscriptionJob, TranscriptSegment
-    photogrammetry.py PhotogrammetryJob (status/stage, input_prefix, mesh/preview keys, warnings, photo_status)
+    photogrammetry.py PhotogrammetryJob (status/stage, input_prefix, mesh/preview keys, warnings, photo_status, remove_background)
     gpu.py            GpuSession (the worker-launch ledger), GpuCostSnapshot
   schemas/         Pydantic request/response schemas (chat, conversation, models, transcription, photogrammetry, gpu)
   core/            security.py (Cognito JWKS verification), exceptions.py, logging.py
@@ -144,8 +144,8 @@ All under `/api/v1`; every route except `health` and `public` requires a Cognito
 1. `POST /api/v1/photogrammetry/jobs` with the filenames (5–150, jpg/png) — creates a `PhotogrammetryJob` (`pending`) under `photogrammetry/<user>/<job>/input/` and returns one presigned PUT per photo (15-minute TTL)
 2. The browser PUTs the photos, then `POST /jobs/{id}/confirm` — verifies the objects, publishes the SQS message, asks the GPU controller for a worker; status → `queued`
 3. `POST /jobs/sample` skips the upload: the job's `input_prefix` is the shared `samples/photogrammetry/images/` set (`PHOTOGRAMMETRY_SAMPLE_PREFIX`), uploaded once by hand
-4. The photogrammetry worker walks `processing/sfm → dense → mesh → texture → complete`, writing `warnings` (photo problems, mesh simplification) and `photo_status` (which photos SfM registered) on the row, `output/mesh.glb` + `output/preview.png` to S3
-5. `GET /jobs/{id}` is polled every 3 s; `GET /jobs/{id}/mesh` returns a plain presigned GET for `<model-viewer>` plus attachment-disposition download URLs; `GET /jobs/{id}/photos` lists the inputs with thumbnails and per-photo status
+4. The photogrammetry worker walks `processing/sfm → dense → mesh → texture → complete` (with `remove_background`, the dense stage masks the backdrop out with u2netp and uploads mask overlays under `masks/`), writing `warnings` (photo problems, mesh simplification, unmasked photos) and `photo_status` (which photos SfM registered) on the row, `output/mesh.glb` + `output/preview.png` to S3
+5. `GET /jobs/{id}` is polled every 3 s; `GET /jobs/{id}/mesh` returns a plain presigned GET for `<model-viewer>` plus attachment-disposition download URLs; `GET /jobs/{id}/photos` lists the inputs with thumbnails, per-photo status and — for a scan created with `remove_background` — `mask_url`, the worker's overlay preview presigned from `…/<job>/masks/<name>.jpg`
 6. Objects under `photogrammetry/` expire after 30 days (bucket lifecycle) — rows outlive them today (`docs/TODO.md`)
 
 **Photos and thumbnails.** `GET /jobs/{id}/photos` and `GET /samples` list the inputs

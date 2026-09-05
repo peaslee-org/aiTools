@@ -20,6 +20,8 @@ def extension_of(filename: str) -> str:
 class JobCreateRequest(BaseModel):
     name: Optional[str] = Field(default=None, max_length=200)
     filenames: List[str] = Field(..., min_length=MIN_IMAGES)
+    # Turntable scans: keep the backdrop for SfM, mask it out of the dense stage.
+    remove_background: bool = False
 
     @field_validator("filenames")
     @classmethod
@@ -58,6 +60,7 @@ class JobStatusResponse(BaseModel):
     estimated_wait_seconds: Optional[int] = None
     gpu_notice: Optional[str] = None
     is_public: bool = False
+    remove_background: bool = False
 
 
 class JobListResponse(BaseModel):
@@ -78,6 +81,9 @@ class PhotoItem(BaseModel):
     # "registered" | "unregistered" | "skipped:<reason>" from the worker's SfM pass; None before
     # it ran (and always for the sample set listing).
     status: Optional[str] = None
+    # Presigned GET of the worker's mask overlay (…/<job>/masks/<name>.jpg) once the dense stage
+    # has run with remove_background; None otherwise (and always for the sample set).
+    mask_url: Optional[str] = None
 
 
 class JobPhotosResponse(BaseModel):

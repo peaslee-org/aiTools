@@ -49,7 +49,7 @@ def test_photo_listing_schemas_shape():
     sample = SamplePhotosResponse(name="Sample scan", image_count=1, photos=[item])
     assert sample.model_dump() == {
         "name": "Sample scan", "image_count": 1,
-        "photos": [{"filename": "0001.jpg", "url": "https://dl/0001.jpg", "thumb_url": "https://dl/t.jpg", "status": None}],
+        "photos": [{"filename": "0001.jpg", "url": "https://dl/0001.jpg", "thumb_url": "https://dl/t.jpg", "status": None, "mask_url": None}],
     }
 
 
@@ -75,3 +75,20 @@ def test_gpu_schemas_carry_kind_stages_and_medians():
                          hourly_rate_usd=0, sessions=[], cold_median_seconds=400, cold_samples=3,
                          warm_median_seconds=None, warm_samples=1)
     assert u.warm_median_seconds is None and u.cold_samples == 3
+
+
+def test_create_request_remove_background_defaults_false_and_round_trips():
+    files = [f"{i}.jpg" for i in range(MIN_IMAGES)]
+    assert JobCreateRequest(filenames=files).remove_background is False
+    assert JobCreateRequest(filenames=files, remove_background=True).remove_background is True
+
+
+def test_status_response_remove_background_defaults_false():
+    now = datetime.now(timezone.utc)
+    r = JobStatusResponse(job_id=uuid4(), name="n", status="queued", image_count=5, created_at=now, updated_at=now)
+    assert r.remove_background is False
+
+
+def test_photo_item_mask_url_defaults_none():
+    from app.schemas.photogrammetry import PhotoItem
+    assert PhotoItem(filename="0001.jpg", url="u").mask_url is None

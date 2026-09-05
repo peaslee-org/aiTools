@@ -34,3 +34,11 @@ def test_photogrammetry_settings_defaults():
     assert s.photogrammetry_max_images == 150
     assert s.photogrammetry_sample_prefix == "samples/photogrammetry/"
     assert s.gpu_photogrammetry_task_family == ""
+
+
+def test_remove_background_is_a_non_null_boolean_defaulting_false():
+    import app.models  # noqa: F401
+    from sqlalchemy import Boolean
+    col = Base.metadata.tables["photogrammetry_jobs"].columns["remove_background"]
+    assert isinstance(col.type, Boolean) and not col.nullable
+    assert str(col.server_default.arg) == "false"

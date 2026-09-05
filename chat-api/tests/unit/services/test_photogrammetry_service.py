@@ -40,6 +40,7 @@ def make_job(**overrides):
     job.error_message = None
     job.warnings = overrides.get("warnings")
     job.photo_status = overrides.get("photo_status")
+    job.remove_background = overrides.get("remove_background", False)
     job.created_at = job.updated_at = NOW
     job.completed_at = None
     return job
@@ -49,8 +50,8 @@ def make_service(*, active_jobs=0, max_images=150, gpu=None, job=None, keys=None
     repo = MagicMock()
     repo.count_active_jobs = AsyncMock(return_value=active_jobs)
     repo.create_job = AsyncMock(
-        side_effect=lambda job_id, user_id, name, image_count, input_prefix: make_job(
-            id=job_id, image_count=image_count
+        side_effect=lambda job_id, user_id, name, image_count, input_prefix, remove_background=False: make_job(
+            id=job_id, image_count=image_count, remove_background=remove_background
         )
     )
     repo.get_job = AsyncMock(return_value=job)
@@ -91,6 +92,16 @@ FILES = ["IMG_1.JPG", "b.png", "c.jpeg", "d.jpg", "e.jpg", "f.jpg"]
 
 
 class TestCreateJob:
+    async def test_remove_background_reaches_the_row(self):
+        svc, repo, _ = make_service()
+        await svc.create_job("user1", JobCreateRequest(filenames=FILES, remove_background=True))
+        assert repo.create_job.await_args.kwargs["remove_background"] is True
+
+    async def test_remove_background_defaults_false(self):
+        svc, repo, _ = make_service()
+        await svc.create_job("user1", JobCreateRequest(filenames=FILES))
+        assert repo.create_job.await_args.kwargs["remove_background"] is False
+
     async def test_429_at_cap(self):
         svc, *_ = make_service(active_jobs=3)
         with pytest.raises(ConcurrentJobLimitExceeded):
@@ -197,6 +208,11 @@ class TestConfirmJob:
 
 
 class TestStatusAndMesh:
+    async def test_status_echoes_remove_background(self):
+        job = make_job(status="queued", remove_background=True)
+        svc, *_ = make_service(job=job)
+        assert (await svc.get_job_status("user1", job.id)).remove_background is True
+
     async def test_status_includes_preview_url_and_mock_false(self):
         job = make_job(status="complete", preview_s3_key="p/preview.png", mesh_s3_key="p/mesh.glb")
         svc, *_ = make_service(job=job)
@@ -419,6 +435,23 @@ async def _clean_thumb_state():
 
 
 class TestListJobPhotos:
+    async def test_mask_url_presigned_when_the_overlay_exists_beside_input(self):
+        job = make_job(status="complete", remove_background=True)
+        keys = [f"{job.input_prefix}0001.jpg", f"{job.input_prefix}0002.jpg"]
+        thumbs_prefix = f"photogrammetry/user1/{job.id}/thumbs/"
+        masks_prefix = f"photogrammetry/user1/{job.id}/masks/"
+        svc, _, storage = make_service(job=job)
+        storage.list_keys_with_prefix.side_effect = lambda p: {
+            job.input_prefix: keys,
+            thumbs_prefix: [f"{thumbs_prefix}0001.jpg", f"{thumbs_prefix}0002.jpg"],
+            masks_prefix: [f"{masks_prefix}0002.jpg"],
+        }.get(p, [])
+        with patch.object(ps, "ensure_thumbnails"):
+            res = await svc.list_job_photos("user1", job.id)
+            await drain_thumbs()
+        assert res.photos[0].mask_url is None
+        assert res.photos[1].mask_url == f"https://dl/{masks_prefix}0002.jpg"
+
     async def test_404_when_not_owner(self):
         svc, *_ = make_service(job=None)
         with pytest.raises(NotFoundError):
@@ -531,6 +564,12 @@ class TestListSamplePhotos:
         svc, *_ = make_service(keys=[])
         with pytest.raises(ConflictError):
             await svc.list_sample_photos()
+
+    async def test_sample_photos_have_no_mask_url(self):
+        svc, *_ = make_service(keys=["samples/photogrammetry/images/0001.jpg"])
+        with patch.object(ps, "ensure_thumbnails", return_value={}):
+            res = await svc.list_sample_photos()
+        assert res.photos[0].mask_url is None
 
     async def test_sample_photos_carry_no_status(self):
         svc, *_ = make_service(keys=["samples/photogrammetry/images/0001.jpg"])

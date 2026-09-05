@@ -92,6 +92,7 @@ class PhotogrammetryService:
             name=request.name or default_job_name(),
             image_count=len(request.filenames),
             input_prefix=input_prefix,
+            remove_background=request.remove_background,
         )
         uploads = []
         for i, filename in enumerate(request.filenames, start=1):
@@ -208,6 +209,11 @@ class PhotogrammetryService:
         inputs, where the worker (and the next listing) would take the thumbnails for photos."""
         return f"{PurePosixPath(input_prefix.rstrip('/')).parent}/thumbs/"
 
+    @staticmethod
+    def _masks_prefix_for(input_prefix: str) -> str:
+        """…/<job>/input/ → …/<job>/masks/ — where the worker puts its mask overlay previews."""
+        return f"{PurePosixPath(input_prefix.rstrip('/')).parent}/masks/"
+
     def _input_keys(self, prefix: str) -> list[str]:
         """The photos directly under `prefix`, sorted; anything nested deeper is not an input."""
         return sorted(
@@ -245,6 +251,8 @@ class PhotogrammetryService:
         keys = self._input_keys(images_prefix)
         thumbs_prefix = self._thumbs_prefix_for(images_prefix)
         existing = set(self._storage.list_keys_with_prefix(thumbs_prefix))
+        masks_prefix = self._masks_prefix_for(images_prefix)
+        masks = set(self._storage.list_keys_with_prefix(masks_prefix))
         wanted = {key: thumb_key_for(key, thumbs_prefix) for key in keys}
         if any(tk not in existing for tk in wanted.values()):
             self._kick_thumbnails(keys, thumbs_prefix)
@@ -260,6 +268,10 @@ class PhotogrammetryService:
                     if wanted[key] in existing else None
                 ),
                 status=status.get(name),
+                mask_url=(
+                    presign(f"{masks_prefix}{name}", ttl_seconds=DOWNLOAD_TTL_SECONDS)
+                    if f"{masks_prefix}{name}" in masks else None
+                ),
             ))
         return items
 
@@ -315,6 +327,7 @@ class PhotogrammetryService:
             estimated_wait_seconds=gpu_state.estimated_wait_seconds if gpu_state else None,
             gpu_notice=gpu_state.notice if gpu_state else None,
             is_public=job.is_public,
+            remove_background=bool(getattr(job, "remove_background", False)),
         )
 
 

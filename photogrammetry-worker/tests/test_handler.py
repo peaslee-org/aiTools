@@ -25,9 +25,12 @@ USER = "user-1"
 class FakeRecon:
     """Records stage calls; `registered` drives the threshold; `fail_at` raises in that stage;
     `faces` is what ReconstructMesh reports (RefineMesh reports 2×)."""
-    def __init__(self, work, registered=10, fail_at=None, interrupt_at=None, faces=1000):
+    def __init__(self, work, registered=10, fail_at=None, interrupt_at=None, faces=1000, mask_report=None):
         self.work, self.registered, self.fail_at, self.interrupt_at, self.faces = work, registered, fail_at, interrupt_at, faces
         self.calls = []
+        self.dense_masks = None          # the `masks` flag the handler passed to dense()
+        self.mask_report = None
+        self._mask_report = mask_report
 
     def _step(self, name):
         self.calls.append(name)
@@ -38,8 +41,16 @@ class FakeRecon:
         self._step("sfm")
         names = frozenset(sorted(p.name for p in images.iterdir())[:self.registered])
         return SparseModel(self.work / "sparse" / "0", self.registered, names)
-    def dense(self, images, model):
-        self._step("dense"); d = self.work / "dense"; d.mkdir(parents=True, exist_ok=True); return d
+    def dense(self, images, model, masks=False):
+        self._step("dense"); self.dense_masks = masks
+        d = self.work / "dense"; d.mkdir(parents=True, exist_ok=True)
+        if masks:
+            from pipeline.masks import MaskReport
+            self.mask_report = self._mask_report or MaskReport(masked=len(list(images.iterdir())), unmasked=[])
+            ov = self.work / "overlays"; ov.mkdir(exist_ok=True)
+            for p in sorted(images.iterdir()):
+                Image.new("RGB", (4, 4)).save(ov / f"{p.stem}.jpg")
+        return d
     def reconstruct_mesh(self, dense):
         self._step("mesh"); return dense / "m.ply", self.faces
     def refine_mesh(self, dense, ply):
@@ -83,7 +94,7 @@ class DeniedDownloadS3(FakeS3):
 
 
 def make(tmp_path, *, status="queued", image_count=10, keys=None, recon_kwargs=None, s3_cls=FakeS3,
-         include_placeholder=False):
+         include_placeholder=False, remove_background=False):
     job_id = uuid.uuid4()
     prefix = f"photogrammetry/{USER}/{job_id}/input/"
     keys = keys if keys is not None else [f"{prefix}{i:04d}.jpg" for i in range(1, image_count + 1)]
@@ -91,7 +102,7 @@ def make(tmp_path, *, status="queued", image_count=10, keys=None, recon_kwargs=N
         keys = [prefix] + keys
     job = MagicMock(id=job_id, user_id=USER, status=status, stage=None, image_count=image_count,
                     input_prefix=prefix, mesh_s3_key=None, preview_s3_key=None, error_message=None, completed_at=None,
-                    warnings=None, processing_started_at=None)
+                    warnings=None, processing_started_at=None, remove_background=remove_background)
     session = MagicMock()
     session.get.return_value = job
 
@@ -663,3 +674,42 @@ def test_resume_writes_photo_status_from_the_sfm_checkpoint(tmp_path):
     process_photogrammetry_job({"job_id": str(job.id)}, deps)
     assert "sfm" not in recons[0].calls
     assert job.photo_status["0009.jpg"] == "registered" and job.photo_status["0010.jpg"] == "unregistered"
+
+
+# ── remove_background: masks in the dense stage, overlays under masks/ ────────
+def test_remove_background_masks_dense_and_uploads_overlays_under_masks_prefix(tmp_path):
+    job, s3, recons, deps = make(tmp_path, image_count=6, remove_background=True)
+    process_photogrammetry_job({"job_id": str(job.id)}, deps)
+    assert recons[0].dense_masks is True
+    mask_keys = sorted(k for k, _, _ in s3.uploaded if "/masks/" in k)
+    assert mask_keys == [f"photogrammetry/{USER}/{job.id}/masks/{i:04d}.jpg" for i in range(1, 7)]
+    assert all(ct == "image/jpeg" for k, ct, _ in s3.uploaded if "/masks/" in k)
+    assert job.status == "complete"
+
+
+def test_remove_background_off_masks_nothing(tmp_path):
+    job, s3, recons, deps = make(tmp_path, image_count=6)
+    process_photogrammetry_job({"job_id": str(job.id)}, deps)
+    assert recons[0].dense_masks is False
+    assert not any("/masks/" in k for k, _, _ in s3.uploaded)
+
+
+def test_unmasked_photos_become_one_warning(tmp_path):
+    from pipeline.masks import MaskReport
+    job, s3, recons, deps = make(tmp_path, image_count=6, remove_background=True,
+                                 recon_kwargs={"mask_report": MaskReport(masked=4, unmasked=["0002.jpg", "0005.jpg"])})
+    process_photogrammetry_job({"job_id": str(job.id)}, deps)
+    assert job.warnings == ["Background could not be separated on 2 photos; they were used unmasked"]
+    assert job.status == "complete"
+
+
+def test_dense_checkpoint_records_mask_counts(tmp_path):
+    from pipeline.masks import MaskReport
+    job, s3, recons, deps = make(tmp_path, image_count=6, remove_background=True,
+                                 recon_kwargs={"mask_report": MaskReport(masked=5, unmasked=["0003.jpg"]),
+                                               "interrupt_at": "mesh"})
+    with pytest.raises(Interrupted):
+        process_photogrammetry_job({"job_id": str(job.id)}, deps)
+    done = Checkpoints(deps.work_root / str(job.id)).completed("dense")
+    assert done["masked"] == 5 and done["unmasked"] == ["0003.jpg"]
+    assert job.warnings == ["Background could not be separated on 1 photo; it was used unmasked"]

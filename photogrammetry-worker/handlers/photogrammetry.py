@@ -117,6 +117,7 @@ def process_photogrammetry_job(body: dict, deps: Deps, receive_count: int = 1) -
             shutil.rmtree(work, ignore_errors=True)
             return
         user_id, input_prefix, image_count = job.user_id, job.input_prefix, job.image_count
+        remove_background = bool(getattr(job, "remove_background", False))
         crashed = ck.crashed_stage()
         # SQS dead-letters a message once its receive count *exceeds* maxReceiveCount, so the
         # handler must act on the last delivery it will ever see, not one past it (spec §2 rule 3).
@@ -141,6 +142,7 @@ def process_photogrammetry_job(body: dict, deps: Deps, receive_count: int = 1) -
 
     images = work / "images"
     output_prefix = f"photogrammetry/{user_id}/{job_id}/output/"
+    masks_prefix = f"photogrammetry/{user_id}/{job_id}/masks/"
     try:
         work.mkdir(parents=True, exist_ok=True)      # exists from here on, even if fetch raises
         # ── fetch (always) ────────────────────────────────────────────────
@@ -180,13 +182,26 @@ def process_photogrammetry_job(body: dict, deps: Deps, receive_count: int = 1) -
             _update(deps, job_id, photo_status=_photo_status(input_names, report, done.get("registered_names", ())))
         model = SparseModel(Path(done["sparse"]), done["registered_images"], frozenset(done.get("registered_names", ())))
 
-        # ── dense ─────────────────────────────────────────────────────────
+        # ── dense (undistort → optional object masks → densify) ───────────
         done = ck.completed("dense")
         if done is None:
             _update(deps, job_id, stage="dense"); ck.started("dense")
-            dense = recon.dense(images, model)
-            ck.done("dense", dense=str(dense)); done = ck.completed("dense")
+            dense = recon.dense(images, model, masks=remove_background)
+            report = getattr(recon, "mask_report", None) if remove_background else None
+            if report is not None:
+                warnings.add(*report.warnings())
+                ck.done("dense", dense=str(dense), masked=report.masked, unmasked=list(report.unmasked))
+            else:
+                ck.done("dense", dense=str(dense))
+            done = ck.completed("dense")
         dense = Path(done["dense"])
+        if remove_background:
+            # Overlay previews for the Photos pane, keyed like the input photos (0001.jpg …).
+            # Re-run on resume too: the overlays live in scratch and an interrupted upload is cheap.
+            overlays = work / "overlays"
+            if overlays.is_dir():
+                for path in sorted(overlays.iterdir()):
+                    deps.s3.upload_file(path, masks_prefix + path.name, "image/jpeg")
 
         # ── mesh (reconstruct, optionally refine) ─────────────────────────
         done = ck.completed("mesh")

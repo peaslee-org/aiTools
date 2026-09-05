@@ -26,7 +26,7 @@ def build_deps(s: Settings) -> Deps:
         s3=S3Client(s.AUDIO_BUCKET_NAME, s.AWS_REGION),
         reconstruction_factory=lambda work, deadline: Reconstruction(
             Runner(deadline=deadline, interrupted=SpotWatcher.interrupted, released=ReleaseWatcher.abort),
-            work, use_gpu=bool(s.COLMAP_USE_GPU)),
+            work, use_gpu=bool(s.COLMAP_USE_GPU), mask_model_path=Path(s.MASK_MODEL_PATH)),
         work_root=Path(s.WORK_DIR),
         use_gpu=bool(s.COLMAP_USE_GPU),
         job_timeout_seconds=s.PHOTOGRAMMETRY_JOB_TIMEOUT_SECONDS,

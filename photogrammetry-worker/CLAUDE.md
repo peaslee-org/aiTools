@@ -12,7 +12,8 @@ normalisation, per-photo status) since 2026-08-29.
 
 ```bash
 cd photogrammetry-worker && uv sync --extra dev
-uv run pytest -q                    # 106 tests (2026-08-29); no AWS, DB, COLMAP or OpenMVS needed
+uv run pytest -q                    # 149 tests (2026-09-04); no AWS, DB, COLMAP or OpenMVS needed
+MASK_MODEL_PATH=~/.u2net/u2netp.onnx uv run pytest -q tests/test_masks.py   # also runs the real-model test when the ONNX file is present
 
 # Build the image (context is the repo root; ~10 GB of layers — CI does this on push). Python packages
 # are pinned by constraints.txt (pip freeze of the acceptance-tested image); tests/test_constraints.py guards it.
@@ -51,6 +52,12 @@ PY
 Expected: `registered N` with N ≥ 14 (60 % of 22), a non-trivial `mesh.glb`, and `preview.png`.
 The OpenMVS seam-leveling bug reproduces the same way (recipe in `docs/TODO.md`).
 
+**Background-removal smoke** (after a worker deploy that touches `pipeline/masks.py` or the model):
+upload the 76-frame turntable cat set (`~/Projects/Amigurumi/scans/cat_20260901-174153/`) with
+**Remove background** ticked. Expect: the dense stage takes well under the unmasked run (the dotted
+backdrop was ~60 % of every frame), a mesh with no backdrop plane, mask previews behind the Photos
+pane's **Show masks** toggle, and no "Background could not be separated…" warning.
+
 ## Environment Variables
 
 | Variable | Default | Required |
@@ -65,6 +72,7 @@ The OpenMVS seam-leveling bug reproduces the same way (recipe in `docs/TODO.md`)
 | `SQS_VISIBILITY_TIMEOUT` | `600` | no — extended every `SQS_VISIBILITY_EXTENSION_INTERVAL` (300) while a job runs |
 | `WORK_DIR` | `/tmp/pg` | no — in prod a host-path volume (`/var/lib/photogrammetry`) so scratch survives a container restart |
 | `COLMAP_USE_GPU` | `1` | no — `0` runs COLMAP SIFT/matching and OpenMVS (`--cuda-device -2`) on CPU. Off a GPU host also set `LD_LIBRARY_PATH=/opt/cuda-stubs`: OpenMVS binaries need `libcuda.so.1` just to load |
+| `MASK_MODEL_PATH` | `/opt/models/u2netp.onnx` | no — u2netp ONNX (4.5 MB, baked into the image) for `remove_background`; CPU inference via onnxruntime, 2 threads |
 | `TEXTURE_MAX_SIZE` | `4096` | no — pixel budget (this²) per atlas embedded in the GLB after cropping to its used UV box (JPEG q85); a thin strip keeps full resolution, so an edge can still be up to 8192 (OpenMVS's atlas size — three.js downscales above a device's `MAX_TEXTURE_SIZE` with a console warning) |
 
 ## Pipeline (as built)
@@ -76,7 +84,7 @@ The OpenMVS seam-leveling bug reproduces the same way (recipe in `docs/TODO.md`)
 | fetch | `sfm` (status → `processing`) | list `input_prefix` (direct children only), download; fail if fewer than `image_count` objects | transient S3 errors (`TRANSIENT_S3_CODES`, connection errors) leave the row `processing` and re-raise (redelivery resumes); permanent ones (`AccessDenied`, `NoSuchKey`) fail the row |
 | photos | `sfm` | `pipeline/photos.py`: EXIF orientation applied and stripped (so COLMAP sees upright pixels), unreadable files skipped with a warning, photos whose pixel size differs from the majority skipped (`CAMERA_SINGLE_DIM_ERROR` otherwise); fail if fewer than `MIN_IMAGES` (5) usable | warnings → `job.warnings` |
 | SfM | `sfm` | `colmap feature_extractor` → `exhaustive_matcher` → `mapper`; the sub-model with the most registered images wins; `photo_status` written per input (`registered` / `unregistered` / `skipped:<why>`, names read from `images.bin`) **before** the gate | **fail if registered < 60 % of usable** ("Only N of M photos could be matched — add overlap and try again") |
-| dense | `dense` | `image_undistorter` → `InterfaceCOLMAP` → `DensifyPointCloud --resolution-level 2` | fixed for the 16 GB T4 |
+| dense | `dense` | `image_undistorter` → **if `job.remove_background`**: `pipeline/masks.py` runs u2netp (CPU) over the *undistorted* images → `dense/masks/<stem>.mask.png` + 640 px overlay previews in `work/overlays/` → `InterfaceCOLMAP` → `DensifyPointCloud --resolution-level 2` (+ `--mask-path dense/masks --ignore-mask-label 0` when masked); after `dense.done` the overlays are uploaded to `photogrammetry/<user>/<job>/masks/<name>.jpg` | `--resolution-level 2` fixed for the 16 GB T4. **A mask never fails a job**: coverage outside 1–90 % → all-255 mask for that photo + one warning "Background could not be separated on N photos; they were used unmasked"; `dense.done` carries `masked`/`unmasked` |
 | mesh | `mesh` | `ReconstructMesh`; then `RefineMesh` **only if** images ≤ `REFINE_MAX_IMAGES` (100) **and** faces ≤ `REFINE_MAX_FACES` (400 k) | refine roughly doubles faces at ~16 GB virtual on 675 k — that OOM-cycled on 2026-08-28 |
 | texture | `texture` | `TextureMesh --decimate FACE_BUDGET/faces` when faces > `FACE_BUDGET` (1 M since 2026-08-31 — meshopt keeps the GLB small), warning "Mesh simplified from N to about 1,000,000 faces to fit the viewer"; `--global-seam-leveling 1 --local-seam-leveling 1` (v2.4.0's sampler regression that blackened leveled faces is patched in the image — `openmvs-v2.4.0-seam-leveling.patch`, upstream `eeedab7`) | |
 | export/publish | `publish` | OBJ → GLB **per material** via trimesh (no atlas re-pack, so multi-material meshes are correct); each atlas is cropped to the box its UVs use, capped at `TEXTURE_MAX_SIZE`² pixels and embedded as JPEG q85 (`pipeline/export.py::shrink_atlas`); corners sharing position + UV are welded (`merge_vertices`, OpenMVS writes one `vt` per corner — unwelded geometry, not the atlases, was the bulk of the 51-photo 45 MB GLB), rotated into glTF's y-up; the GLB is then packed with `gltfpack -cc` (`pipeline/export.py::pack_glb` — KHR_mesh_quantization + EXT_meshopt_compression, ~4× on the sample, textures pass through; on gltfpack failure the raw GLB ships with a "Mesh compression failed" warning instead of failing the job; decoded in the viewer by model-viewer's meshopt decoder, bundled in chat-vue); `preview.png` = first input photo at 640 px; upload `output/mesh.glb` + `output/preview.png`; row → `complete` with keys and `completed_at` | |
@@ -107,11 +115,12 @@ on success and on deterministic failure; kept on transient failure/interruption 
 | `pipeline/photos.py` | Orientation normalisation + usable/skipped/unreadable report |
 | `pipeline/colmap.py` | `sparse_reconstruct` (best sub-model, `registered_image_names` from `images.bin`/`images.txt`), `undistort` |
 | `pipeline/openmvs.py` | Interface/Densify/Reconstruct/Refine/Texture wrappers; parses face counts from tool output |
-| `pipeline/reconstruct.py` | `Reconstruction`: sfm / dense / reconstruct_mesh / refine_mesh / texture(decimate) |
+| `pipeline/reconstruct.py` | `Reconstruction`: sfm / dense(masks) / reconstruct_mesh / refine_mesh / texture(decimate); loads the mask model once, lazily |
+| `pipeline/masks.py` | `load_model` (onnxruntime CPU), `predict` (mirrors rembg's U²-Net pre/post-processing — the spike-validated path), `postprocess` (largest component, holes filled, 0.5 % margin), `sanity`, `overlay`, `make_masks` → `MaskReport` |
 | `pipeline/export.py` | `obj_to_glb` (per-material, y-up), `make_preview` |
 | `pipeline/checkpoints.py` | Stage markers, crash detection, `sweep_stale` |
 | `pipeline/runner.py` | Subprocess runner with the job deadline and the abort event |
-| `models.py` | `PhotogrammetryJob` (duplicated from chat-api on purpose: `warnings`, `photo_status`, keys, stage) |
+| `models.py` | `PhotogrammetryJob` (duplicated from chat-api on purpose: `warnings`, `photo_status`, `remove_background`, keys, stage) |
 
 ## Deployment
 

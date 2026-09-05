@@ -13,4 +13,5 @@ class Settings(BaseSettings):
     SQS_VISIBILITY_EXTENSION_INTERVAL: int = 300
     WORK_DIR: str = "/tmp/pg"
     COLMAP_USE_GPU: int = 1   # 0 runs SIFT/matching on CPU (fitlet smoke test)
-    TEXTURE_MAX_SIZE: int = 4096   # each GLB atlas is cropped to its used UVs, then capped at this² pixels (JPEG)
+    TEXTURE_MAX_SIZE: int = 4096
+    MASK_MODEL_PATH: str = "/opt/models/u2netp.onnx"   # u2netp ONNX for remove_background (CPU inference)   # each GLB atlas is cropped to its used UVs, then capped at this² pixels (JPEG)

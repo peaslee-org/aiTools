@@ -52,6 +52,13 @@ RUN git clone --depth 1 --branch ${MESHOPT_TAG} https://github.com/zeux/meshopti
  && cmake -S meshoptimizer -B meshoptimizer/build -DCMAKE_BUILD_TYPE=Release -DMESHOPT_BUILD_GLTFPACK=ON \
  && cmake --build meshoptimizer/build -j"$(nproc)" --target gltfpack \
  && cp meshoptimizer/build/gltfpack /opt/gltfpack
+# u2netp (U²-Net small, Apache 2.0, 4.5 MB): salient-object masks for the remove_background option,
+# run on CPU by pipeline/masks.py over the undistorted images. Validated on the turntable rig
+# 2026-09-04 (docs/superpowers/specs/2026-09-04-photogrammetry-background-removal-design.md).
+ARG U2NETP_SHA256=309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8
+RUN mkdir -p /opt/models \
+ && curl -fsSL -o /opt/models/u2netp.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx \
+ && echo "${U2NETP_SHA256}  /opt/models/u2netp.onnx" | sha256sum -c -
 
 # Stage 2: runtime = the official COLMAP image (Ubuntu 24.04, CUDA 12.9.1 runtime) + OpenMVS + Python.
 FROM colmap/colmap:20260729.7651
@@ -64,6 +71,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/openmvs/bin/OpenMVS/ /usr/local/bin/
 COPY --from=build /opt/gltfpack /usr/local/bin/gltfpack
+COPY --from=build /opt/models/u2netp.onnx /opt/models/u2netp.onnx
 # libcuda.so.1 is the NVIDIA *driver* library: the container runtime injects it on a GPU host, and no
 # image carries it at build time. OpenMVS links it directly (CUDA::cuda_driver), so its binaries cannot
 # even load without it (attempt 7). The link-time stub from the devel image is kept OFF the loader path;
@@ -88,6 +96,6 @@ ENV PATH="/app/venv/bin:$PATH"
 COPY gpu-worker/ /app/gpu-worker/
 # constraints.txt pins every package to the acceptance-tested image; see the header there.
 COPY photogrammetry-worker/constraints.txt /app/constraints.txt
-RUN pip install --no-cache-dir -c /app/constraints.txt /app/gpu-worker boto3 pydantic-settings sqlalchemy psycopg2-binary "trimesh>=4.4" pillow numpy
+RUN pip install --no-cache-dir -c /app/constraints.txt /app/gpu-worker boto3 pydantic-settings sqlalchemy psycopg2-binary "trimesh>=4.4" pillow numpy onnxruntime opencv-python-headless
 COPY photogrammetry-worker/ /app/
 CMD ["python", "main.py"]

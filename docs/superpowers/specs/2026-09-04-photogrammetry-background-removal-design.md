@@ -1,6 +1,6 @@
 # Photogrammetry: background removal for turntable scans
 
-**Date:** 2026-09-04. **Status:** approved design, awaiting implementation plan.
+**Date:** 2026-09-04. **Status:** implemented 2026-09-04 on branch `feat/photogrammetry-background-removal` (plan `docs/superpowers/plans/2026-09-04-photogrammetry-background-removal.md`); awaiting a production smoke on the rig set. Deviations from this spec are listed at the top of the plan (no demo fixture; masks appear at job end or on reopening the Photos pane; the toggle keys off `mask_url`).
 
 ## Why
 

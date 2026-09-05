@@ -313,6 +313,8 @@ export interface PhotogrammetryJob {
   estimated_wait_seconds?: number | null
   gpu_notice?: string | null
   is_public?: boolean
+  /** Backdrop masked out of the dense stage (turntable scans). */
+  remove_background?: boolean
 }
 
 export interface UploadTarget {
@@ -346,6 +348,8 @@ export interface PhotoItem {
   thumb_url: string | null
   /** "registered" | "unregistered" | "skipped:<reason>" once SfM has run; null before (and for the sample set). */
   status?: string | null
+  /** Presigned mask-overlay URL (the worker's masks/<name>.jpg) once the dense stage ran with background removal; null/absent otherwise. */
+  mask_url?: string | null
 }
 
 export interface JobPhotosResponse {

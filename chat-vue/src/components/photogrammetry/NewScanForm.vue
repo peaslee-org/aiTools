@@ -19,6 +19,7 @@ function defaultName(): string {
 
 const name = ref(defaultName())
 const files = ref<File[]>([])
+const removeBackground = ref(false)
 const submitting = ref(false)
 
 // ── sample mode: the bundled set, shown read-only, submitted server-side ──
@@ -45,7 +46,7 @@ async function loadSample() {
 
 watch(() => props.sample, (on) => {
   if (on) loadSample()
-  else { name.value = defaultName(); samplePhotos.value = []; sampleError.value = null }
+  else { name.value = defaultName(); samplePhotos.value = []; sampleError.value = null; removeBackground.value = false }
 }, { immediate: true })
 
 const canSubmit = computed(() => {
@@ -60,7 +61,7 @@ async function submit() {
   try {
     const jobId = props.sample
       ? await store.submitSampleJob()
-      : await store.submitScan(name.value.trim(), files.value)
+      : await store.submitScan(name.value.trim(), files.value, removeBackground.value)
     emit("submitted", jobId)
   } catch {
     // the store already raised a toast
@@ -82,6 +83,14 @@ async function submit() {
         :disabled="props.sample"
         class="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
       />
+    </label>
+
+    <label v-if="!props.sample" class="flex items-start gap-2 text-sm">
+      <input v-model="removeBackground" type="checkbox" name="remove_background" class="mt-0.5" />
+      <span>
+        <span class="text-gray-700">Remove background</span>
+        <span class="block text-xs text-gray-400">For turntable scans. Keeps only the object in the finished model.</span>
+      </span>
     </label>
 
     <template v-if="props.sample">

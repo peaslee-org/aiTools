@@ -12,8 +12,8 @@ export { uploadToS3 } from "@/lib/transcribeApi"
 
 const BASE = "/api/v1/photogrammetry"
 
-export async function createJob(name: string | null, filenames: string[]): Promise<PhotogrammetryJobCreateResponse> {
-  const res = await apiClient.post(`${BASE}/jobs`, { name, filenames })
+export async function createJob(name: string | null, filenames: string[], removeBackground = false): Promise<PhotogrammetryJobCreateResponse> {
+  const res = await apiClient.post(`${BASE}/jobs`, { name, filenames, remove_background: removeBackground })
   return res.data
 }
 

@@ -6,9 +6,10 @@ vi.mock("@/lib/axios", () => ({
 vi.mock("@/lib/transcribeApi", () => ({ uploadToS3: vi.fn() }))
 
 import { apiClient } from "@/lib/axios"
-import { fetchJobPhotos, fetchSamplePhotos, setJobVisibility } from "@/lib/photogrammetryApi"
+import { createJob, fetchJobPhotos, fetchSamplePhotos, setJobVisibility } from "@/lib/photogrammetryApi"
 
 const get = vi.mocked(apiClient.get)
+const post = vi.mocked(apiClient.post)
 const patch = vi.mocked(apiClient.patch)
 
 const photo = { filename: "0001.jpg", url: "https://s3/full/0001.jpg", thumb_url: "https://s3/thumbs/0001.jpg" }
@@ -38,5 +39,18 @@ describe("photogrammetry api client — photos", () => {
     const res = await setJobVisibility("j1", true)
     expect(patch).toHaveBeenCalledWith("/api/v1/photogrammetry/jobs/j1", { is_public: true })
     expect(res.is_public).toBe(true)
+  })
+})
+
+describe("photogrammetry api client — createJob", () => {
+  beforeEach(() => post.mockReset())
+
+  it("sends remove_background, false by default", async () => {
+    post.mockResolvedValueOnce({ data: { job_id: "j", uploads: [] } })
+    await createJob("n", ["a.jpg"])
+    expect(post).toHaveBeenLastCalledWith("/api/v1/photogrammetry/jobs", { name: "n", filenames: ["a.jpg"], remove_background: false })
+    post.mockResolvedValueOnce({ data: { job_id: "j", uploads: [] } })
+    await createJob("n", ["a.jpg"], true)
+    expect(post).toHaveBeenLastCalledWith("/api/v1/photogrammetry/jobs", { name: "n", filenames: ["a.jpg"], remove_background: true })
   })
 })

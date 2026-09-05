@@ -69,10 +69,10 @@ export const usePhotogrammetryStore = defineStore("photogrammetry", () => {
   }
 
   /** Create → upload every file (4 at a time) → confirm → poll. Returns the job id. */
-  async function submitScan(name: string, files: File[]): Promise<string> {
+  async function submitScan(name: string, files: File[], removeBackground = false): Promise<string> {
     let job_id: string
     try {
-      const created = await api.createJob(name || null, files.map(f => f.name))
+      const created = await api.createJob(name || null, files.map(f => f.name), removeBackground)
       job_id = created.job_id
       const { uploads } = created
       upsert(placeholder(job_id, name, files.length, "pending"))

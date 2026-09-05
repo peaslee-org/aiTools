@@ -69,6 +69,10 @@ with the **Sample** button and look at the thumbnails before shooting your own.
 - **New scan** → give it a name (or keep the date), drop your photos, **Start scan**. The photos
   upload one by one ("Uploading 12/40"); if the page loses the connection mid-upload, start again.
   Upload links are valid for about 15 minutes.
+- **Remove background** — tick it for turntable scans on a patterned backdrop. The backdrop stays
+  in the photos for camera matching and is masked out before the dense reconstruction, so the
+  model is the object alone and the scan runs faster. Leave it off for scenes, rooms and anything
+  where the surroundings *are* the subject.
 - **Sample** → the form opens preloaded with the sample photos (you can't edit that set — use
   **Use my own photos instead** to switch). **Start scan** runs it with nothing to upload.
 - **3 scans in flight** at a time; more than that is refused with a message.
@@ -117,7 +121,9 @@ When a scan completes the page switches to the **3D** view:
   keys step through the set; **Esc** closes. After the scan, each thumbnail is marked: **✓** for
   photos that were matched into the model, **not matched** for those that weren't, **skipped** for
   ones that couldn't be used (hover for the reason). The line above the grid sums it up:
-  *40 photos · 34 matched*.
+  *40 photos · 34 matched*. For a scan with **Remove background**, a **Show masks** toggle above
+  the grid swaps each thumbnail for the mask preview (background dimmed, object outlined). If a
+  mask clips part of the object, start a new scan with the box unticked.
 
 **Warnings** appear above the result (and as ⚠ on the card, and briefly as a notice top-right).
 Common ones:

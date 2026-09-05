@@ -186,3 +186,28 @@ describe("PhotoGrid", () => {
     w.unmount()
   })
 })
+
+describe("PhotoGrid — Show masks", () => {
+  const masked = [
+    { filename: "0001.jpg", url: "https://s3/full/0001.jpg", thumb_url: "https://s3/thumbs/0001.jpg", mask_url: "https://s3/masks/0001.jpg" },
+    { filename: "0002.jpg", url: "https://s3/full/0002.jpg", thumb_url: "https://s3/thumbs/0002.jpg", mask_url: null },
+  ]
+
+  it("offers no toggle when no photo has a mask", () => {
+    const w = mount(PhotoGrid, { props: { photos } })
+    expect(w.find('[data-testid="show-masks"]').exists()).toBe(false)
+  })
+
+  it("toggle swaps tiles with a mask to the overlay and leaves the rest", async () => {
+    const w = mount(PhotoGrid, { props: { photos: masked } })
+    const toggle = w.find('[data-testid="show-masks"]')
+    expect(toggle.exists()).toBe(true)
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    await toggle.setValue(true)
+    const imgs = w.findAll('[data-testid="photo-tile"] img')
+    expect(imgs[0].attributes("src")).toBe("https://s3/masks/0001.jpg")
+    expect(imgs[1].attributes("src")).toBe("https://s3/thumbs/0002.jpg")
+    await toggle.setValue(false)
+    expect(w.findAll('[data-testid="photo-tile"] img')[0].attributes("src")).toBe("https://s3/thumbs/0001.jpg")
+  })
+})

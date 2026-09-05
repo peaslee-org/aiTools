@@ -62,6 +62,13 @@ function tagTitle(photo: PhotoItem): string {
 }
 const stillLoading = computed(() => props.loading || doneCount.value < props.photos.length)
 
+// ── mask overlays (remove_background scans): the worker's darkened-background preview per photo ──
+const showMasks = ref(false)
+const hasMasks = computed(() => props.photos.some(p => !!p.mask_url))
+function tileSrc(photo: PhotoItem): string | null {
+  return showMasks.value && photo.mask_url ? photo.mask_url : photo.thumb_url
+}
+
 // ── overlay with prev/next ──
 const openIndex = ref<number | null>(null)
 const open = computed(() => (openIndex.value === null ? null : props.photos[openIndex.value] ?? null))
@@ -109,6 +116,10 @@ const chevron = "absolute top-1/2 -translate-y-1/2 select-none px-3 text-5xl lea
           <path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="4" stroke-linecap="round" />
         </svg>
         <span>{{ status }}</span>
+        <label v-if="hasMasks" class="ml-auto flex items-center gap-1 text-xs text-gray-600" title="Swap thumbnails for the background-removal masks">
+          <input v-model="showMasks" type="checkbox" data-testid="show-masks" />
+          Show masks
+        </label>
       </p>
 
       <div v-if="props.loading" class="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-1">
@@ -126,8 +137,8 @@ const chevron = "absolute top-1/2 -translate-y-1/2 select-none px-3 text-5xl lea
           @click="show(i)"
         >
           <img
-            v-if="photo.thumb_url"
-            :src="photo.thumb_url"
+            v-if="tileSrc(photo)"
+            :src="tileSrc(photo)!"
             :alt="photo.filename"
             :title="photo.filename"
             loading="lazy"

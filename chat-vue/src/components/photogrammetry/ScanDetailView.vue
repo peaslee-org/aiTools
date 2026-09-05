@@ -185,6 +185,7 @@ const segment = "px-3 py-1 text-xs font-medium transition-colors disabled:cursor
         <h2 class="truncate text-base font-semibold">{{ job.name }}</h2>
         <ScanStatusBadge :status="job.status" :stage="job.stage" :worker-state="job.worker_state" :estimated-wait-seconds="job.estimated_wait_seconds" />
         <span class="text-xs text-gray-500">{{ job.image_count }} photos</span>
+        <span v-if="job.remove_background" class="text-xs text-gray-500" title="Backdrop masked out of the dense stage">· background removed</span>
         <span v-if="job.gpu_notice" class="text-xs text-amber-700">{{ job.gpu_notice }}</span>
 
         <div class="ml-auto flex shrink-0 items-center gap-2">

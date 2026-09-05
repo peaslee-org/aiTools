@@ -57,7 +57,7 @@ uv run alembic -c app/db/alembic.ini upgrade head
 
 Migrations run automatically at container start (`scripts/entrypoint.sh` runs `alembic upgrade
 head` before gunicorn binds), so an API deploy *is* the schema deploy. Chain ids in
-`app/db/migrations/versions/` (latest: `u1v2w3x4y5z6`). Deploy the API before any worker whose ORM
+`app/db/migrations/versions/` (latest: `w3x4y5z6a7b8`). Deploy the API before any worker whose ORM
 model reads a new column.
 
 ## Architecture

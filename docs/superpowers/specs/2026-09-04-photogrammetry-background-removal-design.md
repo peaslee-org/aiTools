@@ -1,6 +1,6 @@
 # Photogrammetry: background removal for turntable scans
 
-**Date:** 2026-09-04. **Status:** implemented 2026-09-04 on branch `feat/photogrammetry-background-removal` (plan `docs/superpowers/plans/2026-09-04-photogrammetry-background-removal.md`); awaiting a production smoke on the rig set. Deviations from this spec are listed at the top of the plan (no demo fixture; masks appear at job end or on reopening the Photos pane; the toggle keys off `mask_url`).
+**Date:** 2026-09-04. **Status:** implemented 2026-09-04 (plan `docs/superpowers/plans/2026-09-04-photogrammetry-background-removal.md`), merged to `main` and deployed 2026-09-06 (Deploy run 34040475702: migration `w3x4y5z6a7b8`, worker task-def `:24` on image `721860c`). Production smoke on the 76-frame cat set passed: all 76 masked, dense stage 47 s, no backdrop in the mesh, masks visible in the Photos pane. Deviations from this spec are listed at the top of the plan (no demo fixture; masks appear at job end or on reopening the Photos pane; the toggle keys off `mask_url`).
 
 ## Why
 

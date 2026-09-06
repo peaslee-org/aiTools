@@ -6,7 +6,8 @@ provider, launched per job by the API's `RunTask` and exiting itself when idle (
 texturing, and writes `output/mesh.glb` + `output/preview.png` back to S3, walking the job row
 through `processing/sfm → dense → mesh → texture → complete`. Live in production since
 2026-08-28; the robustness batch (resumable stages, mesh budget, no OOM cycling, photo
-normalisation, per-photo status) since 2026-08-29.
+normalisation, per-photo status) since 2026-08-29; background removal for turntable scans
+(`remove_background`: u2netp masks in the dense stage) since 2026-09-06.
 
 ## Key Commands
 
@@ -54,9 +55,12 @@ The OpenMVS seam-leveling bug reproduces the same way (recipe in `docs/TODO.md`)
 
 **Background-removal smoke** (after a worker deploy that touches `pipeline/masks.py` or the model):
 upload the 76-frame turntable cat set (`~/Projects/Amigurumi/scans/cat_20260901-174153/`) with
-**Remove background** ticked. Expect: the dense stage takes well under the unmasked run (the dotted
-backdrop was ~60 % of every frame), a mesh with no backdrop plane, mask previews behind the Photos
-pane's **Show masks** toggle, and no "Background could not be separated…" warning.
+**Remove background** ticked. Expect (measured 2026-09-06, job `7130f4af`, task-def `:24`): all 76
+registered, masks 46 s (0.6 s/photo on the g4dn vCPU), `DensifyPointCloud` **47 s** → 547 k points,
+ReconstructMesh 855 k faces (refine skipped), TextureMesh 6 min 22 s, ≈19.5 min claim → complete
+of which `exhaustive_matcher` is 8 min (`docs/TODO.md`: sequential matching). A mesh with no
+backdrop plane, mask previews behind the Photos pane's **Show masks** toggle, and no "Background
+could not be separated…" warning.
 
 ## Environment Variables
 

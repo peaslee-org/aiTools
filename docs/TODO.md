@@ -8,6 +8,28 @@ deploy; infra items a Terraform apply. `deploy.yml` orders the first three; see
 
 ## Worker image (batch these — rebake the GPU AMI once)
 
+- [ ] **Turntable sets: sequential matching.** The masked 76-frame cat scan (2026-09-06, job
+  `7130f4af`) spent 8 min 7 s of its 19.5 min in `exhaustive_matcher` (2 850 pairs) while the
+  dense stage took 47 s. A turntable sequence only needs neighbours + loop closure
+  (`sequential_matcher --SequentialMatching.loop_detection 1` with a vocab tree, or a window of
+  ~10). Gate it on the `remove_background` flag or a future rig profile.
+- [ ] **Decimate before texturing, not only for the viewer.** Same scan: `TextureMesh` took
+  6 min 22 s on 855 k faces for a hand-sized toy; texturing scales with faces. A per-scan face
+  target (~200 k for small objects) before `TextureMesh` would take most of that off and shrink
+  the GLB. Related: refine is skipped above 400 k faces, so small objects never get it.
+- [ ] **RefineMesh runaway on sparse wide scenes.** Harbor-view scan (2026-09-06, job `7d121b76`,
+  65 registered, unmasked): densify 48 s → only 45 782 points, ReconstructMesh 56 k faces in 3 s,
+  then `RefineMesh` **28 min** to reach 117 k faces; the whole job was ~45 min. The refine gate
+  (≤ 100 images, ≤ 400 k faces) lets a low-density scene through. Gate on dense-point count or
+  cap refine's `--max-face-area`/iterations; also `feature_extractor` 4.5 min and
+  `image_undistorter` 6 min suggest large phone frames — consider `--ImageReader` downscale.
+- [ ] Background removal follow-ups (spec 2026-09-04): saved rig profile (camera settings from
+  the rig's `session.json`, a static-region SfM mask for rigs where the room is in frame);
+  re-running a job with the flag flipped from the same uploads; BiRefNet on the GPU host if
+  u2netp proves weak on other objects (untestable on the 8 GB fitlet); geometric clean-up of the
+  wire stand and its shadow after meshing (ROI / plane cut).
+- [ ] GPU AMI re-bake is optional after `721860c`: the worker image gained ~100 MB (onnxruntime,
+  opencv-python-headless, u2netp.onnx); cold starts pull those layers (~5 min) until a re-bake.
 - [ ] **Immediate release leaves the message invisible for up to `SQS_VISIBILITY_TIMEOUT` (600 s).**
   Only `SpotWatcher` calls `change_message_visibility(0)`; the shell's `except Interrupted` should
   do the same when `ReleaseWatcher.abort` is set so the next worker gets the job at once.
@@ -116,7 +138,17 @@ deploy; infra items a Terraform apply. `deploy.yml` orders the first three; see
 - [ ] `chat-api/.env` pins `GPU_WAIT_ESTIMATE_*` to the old 120/180 s; drop them so local dev uses
   the code defaults (420 / 90).
 
-## Recently done (2026-08-28 → 31)
+## Recently done (2026-08-28 → 09-06)
+
+- 2026-09-06 **Background removal for turntable scans** (API migration `w3x4y5z6a7b8` + worker
+  image `721860c` / task-def `:24` + Vue). Per-scan **Remove background** checkbox; the worker
+  keeps the dotted backdrop for SfM and, inside the dense stage, runs u2netp (CPU, onnxruntime,
+  4.5 MB model baked into the image) over the *undistorted* images → `<stem>.mask.png` for
+  `DensifyPointCloud --mask-path … --ignore-mask-label 0`; a mask outside 1–90 % coverage runs
+  unmasked with one warning; 640 px overlay previews go to `…/<job>/masks/` and the Photos pane
+  gets a **Show masks** toggle. Verified in prod on the 76-frame cat set: all 76 masked, dense
+  stage 47 s, no backdrop in the mesh. Spec
+  `docs/superpowers/specs/2026-09-04-photogrammetry-background-removal-design.md`.
 
 - 2026-08-31 **Cost per job in the usage panel** (API migration `t0u1v2w3x4y5` + worker + Vue).
   Two numbers with different jobs: a session's `cost_usd` (wall clock × `GPU_HOURLY_RATE_USD` —

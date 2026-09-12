@@ -150,3 +150,29 @@ describe("drawPlan", () => {
     expect(drawPlan(90, target)).toMatchObject({ drawWidth: 2250, drawHeight: 3000 })
   })
 })
+
+describe("what an iPhone actually hands over", () => {
+  // Measured on an iPhone XS/11 picking from the photo library in mobile Safari; see
+  // docs/superpowers/probes/2026-09-12-ios-photo-picker.md. These pass by construction —
+  // they exist to pin observed device behaviour, so a later refactor of the rotation
+  // detection cannot quietly break the one configuration this feature was built for.
+  const SENSOR = { width: 4032, height: 3024 }
+
+  it("leaves a landscape frame alone", () => {
+    expect(rotationFor(1, SENSOR, { width: 4032, height: 3024 })).toBe(0)
+  })
+
+  it("adds no rotation to a portrait frame Safari already turned upright", () => {
+    // Stored stays sensor-native landscape while the decoder returns upright pixels, and the
+    // Orientation tag is left at 6. Trusting that tag would rotate the image a second time.
+    expect(rotationFor(6, SENSOR, { width: 3024, height: 4032 })).toBe(0)
+  })
+
+  it("produces transposed sizes for a mixed set, which the worker can reconcile", () => {
+    const landscape = targetSize(4032, 3024, MAX_LONG_EDGE)
+    const portrait = targetSize(3024, 4032, MAX_LONG_EDGE)
+
+    expect(landscape).toEqual({ width: 3000, height: 2250 })
+    expect(portrait).toEqual({ width: 2250, height: 3000 })
+  })
+})

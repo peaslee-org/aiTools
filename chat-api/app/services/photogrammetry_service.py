@@ -100,7 +100,9 @@ class PhotogrammetryService:
             uploads.append(UploadTarget(
                 filename=filename,
                 key=key,
-                url=self._storage.generate_presigned_upload_url(key),
+                url=self._storage.generate_presigned_upload_url(
+                    key, ttl_seconds=self._settings.photogrammetry_upload_ttl_seconds
+                ),
             ))
         return JobCreateResponse(job_id=job_id, uploads=uploads)
 

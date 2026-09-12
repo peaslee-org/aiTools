@@ -77,6 +77,7 @@ def make_service(*, active_jobs=0, max_images=150, gpu=None, job=None, keys=None
     settings.max_concurrent_jobs = 3
     settings.photogrammetry_max_images = max_images
     settings.photogrammetry_sample_prefix = "samples/photogrammetry/"
+    settings.photogrammetry_upload_ttl_seconds = 3600
 
     return PhotogrammetryService(repo, storage, settings, gpu, sqs), repo, storage
 
@@ -101,6 +102,18 @@ class TestCreateJob:
         svc, repo, _ = make_service()
         await svc.create_job("user1", JobCreateRequest(filenames=FILES))
         assert repo.create_job.await_args.kwargs["remove_background"] is False
+
+    async def test_upload_urls_outlive_a_phone_sized_upload(self):
+        # 15 minutes is the transcribe default, sized for one audio file. A 150-photo scan over
+        # cellular outlives it, and an expired signature fails the PUT with nothing to resume
+        # from — the job just sits in `pending`.
+        svc, _, storage = make_service()
+        await svc.create_job("user1", JobCreateRequest(filenames=FILES))
+        ttls = {
+            call.kwargs.get("ttl_seconds")
+            for call in storage.generate_presigned_upload_url.call_args_list
+        }
+        assert ttls == {3600}
 
     async def test_429_at_cap(self):
         svc, *_ = make_service(active_jobs=3)

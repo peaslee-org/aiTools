@@ -9,6 +9,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const files = ref<File[]>([])
 const isDragOver = ref(false)
 const thumbs = ref<string[]>([])
+const rejected = ref<string[]>([])
 
 const error = computed(() => {
   if (files.value.length === 0) return null
@@ -23,7 +24,11 @@ function isImage(f: File): boolean {
 }
 
 function addFiles(list: FileList | File[]) {
-  const incoming = Array.from(list).filter(isImage)
+  const picked = Array.from(list)
+  const incoming = picked.filter(isImage)
+  // Named, not silently discarded: an iPhone hands over HEIC whenever Safari declines to
+  // transcode, and an empty-looking picker gave no clue why.
+  rejected.value = picked.filter(f => !isImage(f)).map(f => f.name)
   const seen = new Set(files.value.map(f => `${f.name}:${f.size}`))
   const next: File[] = []
   for (const f of incoming) {
@@ -37,6 +42,7 @@ function addFiles(list: FileList | File[]) {
 
 function clear() {
   files.value = []
+  rejected.value = []
 }
 
 function onDrop(e: DragEvent) {
@@ -78,7 +84,7 @@ onUnmounted(revokeThumbs)
       <div v-if="files.length" class="text-sm text-gray-700">
         <span class="font-medium">{{ files.length }} photos</span>
         <span class="text-gray-400 ml-2">({{ totalMb }} MB)</span>
-        <div class="mt-3 grid grid-cols-6 gap-1" @click.stop>
+        <div class="mt-3 grid grid-cols-3 gap-1 sm:grid-cols-6" @click.stop>
           <img v-for="(src, i) in thumbs" :key="i" :src="src" class="aspect-square w-full rounded object-cover" alt="" />
           <div v-if="files.length > thumbs.length" class="flex aspect-square items-center justify-center rounded bg-gray-200 text-xs text-gray-600">
             +{{ files.length - thumbs.length }}
@@ -92,5 +98,9 @@ onUnmounted(revokeThumbs)
       </div>
     </div>
     <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
+    <p v-if="rejected.length" class="mt-1 text-xs text-amber-600">
+      {{ rejected.length }} file{{ rejected.length === 1 ? "" : "s" }} skipped, not a JPG or PNG:
+      {{ rejected.slice(0, 5).join(", ") }}{{ rejected.length > 5 ? ", …" : "" }}
+    </p>
   </div>
 </template>

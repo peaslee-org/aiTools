@@ -1,6 +1,7 @@
 import { defineStore } from "pinia"
 import { computed, reactive, ref } from "vue"
 import axios from "axios"
+import { jpegName, prepareImage } from "@/lib/prepareImage"
 import * as api from "@/lib/photogrammetryApi"
 import type { JobPhotosResponse, MeshUrls, PhotogrammetryJob, SamplePhotos } from "@/types"
 
@@ -72,17 +73,29 @@ export const usePhotogrammetryStore = defineStore("photogrammetry", () => {
   async function submitScan(name: string, files: File[], removeBackground = false): Promise<string> {
     let job_id: string
     try {
-      const created = await api.createJob(name || null, files.map(f => f.name), removeBackground)
+      // The re-encode renames to .jpg, and the API validates on extension, so the job has to be
+      // registered under the prepared names — which are known without doing the work yet.
+      const created = await api.createJob(name || null, files.map(f => jpegName(f.name)), removeBackground)
       job_id = created.job_id
       const { uploads } = created
       upsert(placeholder(job_id, name, files.length, "pending"))
       activeJobId.value = job_id
       uploadProgress.value = { done: 0, total: uploads.length }
+      // Decoding is CPU-bound and a 12MP frame costs ~48 MB of RGBA, so prepares run one at a
+      // time behind this chain while the uploads themselves stay concurrent. Lazily, too: 150
+      // prepared files held at once would not survive an older phone.
+      let decoding: Promise<unknown> = Promise.resolve()
+      function prepared(file: File): Promise<File> {
+        const done = decoding.then(() => prepareImage(file))
+        decoding = done.catch(() => undefined) // one bad photo must not block the rest
+        return done
+      }
+
       let next = 0
       async function worker(): Promise<void> {
         while (next < uploads.length) {
           const i = next++
-          await api.uploadToS3(uploads[i].url, files[i])
+          await api.uploadToS3(uploads[i].url, await prepared(files[i]))
           if (uploadProgress.value) uploadProgress.value.done++
         }
       }

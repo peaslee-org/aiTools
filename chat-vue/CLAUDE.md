@@ -102,6 +102,12 @@ src/
   config/models.ts     Static Bedrock model list (AVAILABLE_MODELS) and DEFAULT_MODEL_ID
   lib/
     pkce.ts            PKCE code_verifier + code_challenge generation (WebCrypto)
+    prepareImage.ts    Phone photo → upright, long-edge-capped (3000 px) JPEG with the original's
+                       EXIF spliced back on, so COLMAP keeps its focal prior. rotationFor() decides
+                       rotation by comparing the JPEG frame header's stored size with what the
+                       decoder returned, rather than trusting Safari to honour EXIF
+    exifJpeg.ts        Pure JPEG byte surgery behind it: extractApp1 / readOrientation /
+                       readStoredSize / setOrientation / insertApp1 (DOM-free, so it unit-tests)
     axios.ts           Axios instance with auth interceptor and 401 handler
     transcribeApi.ts   Transcribe feature API calls (speakers, samples, jobs, transcripts)
     photogrammetryApi.ts   Photogrammetry API calls (jobs, uploads, mesh URLs, job photos, sample photos)
@@ -198,7 +204,8 @@ src/
                                failed); while in flight and the worker isn't running it shows the
                                GPU label with the remaining wait
       StageStrip.vue           Four-step strip (Cameras (SfM) · Dense cloud · Mesh · Texture)
-      ImageDropzone.vue        Multi-file drag/drop image picker (5–150 photos) with local thumbnails
+      ImageDropzone.vue        Multi-file drag/drop image picker (5–150 photos) with local thumbnails;
+                               names any file it could not accept instead of dropping it silently
       NewScanForm.vue          Name + dropzone + Start scan (uploadProgress); prop `sample` = read-only
                                sample mode: name locked, PhotoGrid of the bundled set from
                                GET /samples, "Use my own photos instead", Start runs POST /jobs/sample

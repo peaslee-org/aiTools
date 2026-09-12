@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # Seconds spent in each mock stage: queued → sfm → dense → mesh → texture → complete
     mock_photogrammetry_stage_delay_seconds: float = 2.0
     photogrammetry_max_images: int = 150
+    # Upload window for a whole photo set. The 15-minute default fits one audio file, not 150
+    # phone photos over cellular — an expired signature fails the PUT with nothing to resume.
+    photogrammetry_upload_ttl_seconds: int = 3600
     # Shared sample photo set in the audio bucket, uploaded once by hand (images/0001.jpg …)
     photogrammetry_sample_prefix: str = "samples/photogrammetry/"
     # ECS task family of the photogrammetry worker; empty = not deployed (confirm returns 503)

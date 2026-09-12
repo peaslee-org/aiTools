@@ -141,9 +141,44 @@ export async function getJobAudioUrl(jobId: string): Promise<AudioUrlResponse> {
  * Upload a file directly to S3 using a pre-signed PUT URL.
  * Must NOT use apiClient — no Authorization header should be sent to S3.
  */
+/** Backoff before each retry; its length sets how many extra attempts an upload gets. */
+const UPLOAD_RETRY_DELAYS_MS = [400, 1200]
+
+/** Throttling and S3's own transient failures. A 403 is an expired signature — permanent. */
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504])
+
+interface UploadFailure {
+  error: Error
+  retryable: boolean
+}
+
+async function attemptUpload(uploadUrl: string, file: File): Promise<UploadFailure | null> {
+  try {
+    const res = await fetch(uploadUrl, { method: "PUT", body: file })
+    if (res.ok) return null
+    return {
+      error: new Error(`S3 upload failed: ${res.status}`),
+      retryable: RETRYABLE_STATUSES.has(res.status),
+    }
+  } catch (err) {
+    // fetch only rejects on network-level failure, which is exactly what a phone on cellular
+    // does mid-scan. Always worth another go.
+    return { error: err instanceof Error ? err : new Error(String(err)), retryable: true }
+  }
+}
+
+/**
+ * PUTs a file to a presigned URL, retrying transient failures.
+ *
+ * Presigned PUTs carry no auth header, so this deliberately uses plain `fetch` rather than
+ * `apiClient`. A single dropped request used to fail an entire scan and leave the job stuck
+ * in `pending` with no way to resume, which is untenable over a mobile connection.
+ */
 export async function uploadToS3(uploadUrl: string, file: File): Promise<void> {
-  const res = await fetch(uploadUrl, { method: "PUT", body: file })
-  if (!res.ok) {
-    throw new Error(`S3 upload failed: ${res.status}`)
+  for (let attempt = 0; ; attempt++) {
+    const failure = await attemptUpload(uploadUrl, file)
+    if (!failure) return
+    if (!failure.retryable || attempt >= UPLOAD_RETRY_DELAYS_MS.length) throw failure.error
+    await new Promise((resolve) => setTimeout(resolve, UPLOAD_RETRY_DELAYS_MS[attempt]))
   }
 }

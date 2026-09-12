@@ -172,7 +172,7 @@ describe("what an iPhone actually hands over", () => {
     const landscape = targetSize(4032, 3024, MAX_LONG_EDGE)
     const portrait = targetSize(3024, 4032, MAX_LONG_EDGE)
 
-    expect(landscape).toEqual({ width: 3000, height: 2250 })
-    expect(portrait).toEqual({ width: 2250, height: 3000 })
+    expect(landscape).toEqual({ width: 2400, height: 1800 })
+    expect(portrait).toEqual({ width: 1800, height: 2400 })
   })
 })

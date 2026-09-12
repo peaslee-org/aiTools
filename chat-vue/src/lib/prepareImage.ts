@@ -15,8 +15,8 @@ import {
   setOrientation,
 } from "@/lib/exifJpeg"
 
-/** Long-edge cap in pixels. 12MP (4032×3024) lands at 3000×2250, roughly 1.2 MB. */
-export const MAX_LONG_EDGE = 3000
+/** Long-edge cap in pixels. A 12MP frame (4032×3024) lands at 2400×1800, under a megabyte. */
+export const MAX_LONG_EDGE = 2400
 const JPEG_QUALITY = 0.9
 
 /**

@@ -102,7 +102,7 @@ src/
   config/models.ts     Static Bedrock model list (AVAILABLE_MODELS) and DEFAULT_MODEL_ID
   lib/
     pkce.ts            PKCE code_verifier + code_challenge generation (WebCrypto)
-    prepareImage.ts    Phone photo → upright, long-edge-capped (3000 px) JPEG with the original's
+    prepareImage.ts    Phone photo → upright, long-edge-capped (2400 px) JPEG with the original's
                        EXIF spliced back on, so COLMAP keeps its focal prior. rotationFor() decides
                        rotation by comparing the JPEG frame header's stored size with what the
                        decoder returned, rather than trusting Safari to honour EXIF

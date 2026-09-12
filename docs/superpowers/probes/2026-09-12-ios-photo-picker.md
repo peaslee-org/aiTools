@@ -25,7 +25,7 @@ tag, and why the prepared file's Orientation is stamped to 1 — the pixels writ
 upright, and `photogrammetry-worker/pipeline/photos.py` would otherwise `exif_transpose` them
 again.
 
-The resulting prepared sizes, 3000x2250 and 2250x3000, are exact transposes, which is what lets
+The resulting prepared sizes, 2400x1800 and 1800x2400, are exact transposes, which is what lets
 `normalise()` rotate the minority orientation instead of skipping it under
 `--ImageReader.single_camera 1`.
 

@@ -10,6 +10,7 @@ import type { Size } from "@/lib/exifJpeg"
 import {
   extractApp1,
   insertApp1,
+  readFocalLength,
   readOrientation,
   readStoredSize,
   setOrientation,
@@ -153,4 +154,29 @@ export async function prepareImage(file: File): Promise<File> {
     canvas.width = 0
     canvas.height = 0
   }
+}
+
+
+/**
+ * How much of a file to read when only its metadata is wanted. EXIF sits just after SOI; 64 KB
+ * clears even an APP1 carrying an embedded thumbnail.
+ */
+const EXIF_HEAD_BYTES = 65536
+
+/**
+ * The names of photos carrying no EXIF FocalLength, so the picker can say so.
+ *
+ * On iOS these are the ones captured through the browser rather than picked from the photo
+ * library (docs/superpowers/probes/2026-09-12-ios-photo-picker.md); COLMAP falls back to a
+ * guessed focal prior for them. Advisory only — a truncated or unusual APP1 reports as missing,
+ * which is why this warns rather than rejects.
+ */
+export async function photosMissingFocalLength(files: File[]): Promise<string[]> {
+  const missing: string[] = []
+  for (const file of files) {
+    const head = new Uint8Array(await file.slice(0, EXIF_HEAD_BYTES).arrayBuffer())
+    const app1 = extractApp1(head)
+    if (!app1 || readFocalLength(app1) === null) missing.push(file.name)
+  }
+  return missing
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue"
+import { photosMissingFocalLength } from "@/lib/prepareImage"
 
 const props = withDefaults(defineProps<{ min?: number; max?: number }>(), { min: 5, max: 150 })
 const emit = defineEmits<{ "files-changed": [files: File[]] }>()
@@ -10,6 +11,7 @@ const files = ref<File[]>([])
 const isDragOver = ref(false)
 const thumbs = ref<string[]>([])
 const rejected = ref<string[]>([])
+const noFocal = ref<string[]>([])
 
 const error = computed(() => {
   if (files.value.length === 0) return null
@@ -38,11 +40,24 @@ function addFiles(list: FileList | File[]) {
     next.push(f)
   }
   files.value = [...files.value, ...next]
+  void flagMissingFocalLength(next)
+}
+
+/** Advisory: names the photos COLMAP will have to guess a focal length for. */
+async function flagMissingFocalLength(added: File[]): Promise<void> {
+  if (added.length === 0) return
+  try {
+    const missing = await photosMissingFocalLength(added)
+    if (missing.length) noFocal.value = [...noFocal.value, ...missing]
+  } catch {
+    // Reading metadata is a nicety; never fail a selection over it.
+  }
 }
 
 function clear() {
   files.value = []
   rejected.value = []
+  noFocal.value = []
 }
 
 function onDrop(e: DragEvent) {
@@ -98,6 +113,11 @@ onUnmounted(revokeThumbs)
       </div>
     </div>
     <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
+    <p v-if="noFocal.length" class="mt-1 text-xs text-amber-600">
+      {{ noFocal.length }} photo{{ noFocal.length === 1 ? " has" : "s have" }} no focal length —
+      taken with the camera here rather than picked from your library. They still reconstruct, but
+      less accurately; shooting in the Camera app and picking from the library keeps it.
+    </p>
     <p v-if="rejected.length" class="mt-1 text-xs text-amber-600">
       {{ rejected.length }} file{{ rejected.length === 1 ? "" : "s" }} skipped, not a JPG or PNG:
       {{ rejected.slice(0, 5).join(", ") }}{{ rejected.length > 5 ? ", …" : "" }}

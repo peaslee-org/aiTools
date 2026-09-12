@@ -107,7 +107,8 @@ src/
                        rotation by comparing the JPEG frame header's stored size with what the
                        decoder returned, rather than trusting Safari to honour EXIF
     exifJpeg.ts        Pure JPEG byte surgery behind it: extractApp1 / readOrientation /
-                       readStoredSize / setOrientation / insertApp1 (DOM-free, so it unit-tests)
+                       readStoredSize / readFocalLength (chases the 0x8769 Exif sub-IFD, where
+                       phones put it) / setOrientation / insertApp1 (DOM-free, so it unit-tests)
     axios.ts           Axios instance with auth interceptor and 401 handler
     transcribeApi.ts   Transcribe feature API calls (speakers, samples, jobs, transcripts)
     photogrammetryApi.ts   Photogrammetry API calls (jobs, uploads, mesh URLs, job photos, sample photos)
@@ -205,7 +206,9 @@ src/
                                GPU label with the remaining wait
       StageStrip.vue           Four-step strip (Cameras (SfM) · Dense cloud · Mesh · Texture)
       ImageDropzone.vue        Multi-file drag/drop image picker (5–150 photos) with local thumbnails;
-                               names any file it could not accept instead of dropping it silently
+                               names any file it could not accept instead of dropping it silently, and
+                               warns (without rejecting) about photos carrying no EXIF FocalLength —
+                               iOS omits it on captures taken through the page, so COLMAP has to guess
       NewScanForm.vue          Name + dropzone + Start scan (uploadProgress); prop `sample` = read-only
                                sample mode: name locked, PhotoGrid of the bundled set from
                                GET /samples, "Use my own photos instead", Start runs POST /jobs/sample

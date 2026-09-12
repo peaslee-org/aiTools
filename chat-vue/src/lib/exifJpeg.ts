@@ -92,14 +92,21 @@ export function readStoredSize(jpeg: Bytes): Size | null {
   return size
 }
 
-interface OrientationSite {
+const TAG_EXIF_IFD = 0x8769
+const TAG_FOCAL_LENGTH = 0x920a
+const TYPE_RATIONAL = 5
+
+interface TiffReader {
   littleEndian: boolean
-  /** Offset of the Orientation IFD entry, or null when the tag is absent. */
-  entryAt: number | null
+  /** Start of the TIFF header — every offset inside the block is relative to this. */
+  tiff: number
+  ifd0: number
+  read16(at: number): number
+  read32(at: number): number
 }
 
-/** Finds the Orientation entry inside an APP1 segment's IFD0, without reading its value. */
-function locateOrientation(app1: Bytes): OrientationSite | null {
+/** Opens the TIFF block inside an APP1 segment, or null when it is not one. */
+function tiffReader(app1: Bytes): TiffReader | null {
   const tiff = TIFF_OFFSET_IN_APP1
   if (tiff + 8 > app1.length) return null
 
@@ -115,13 +122,42 @@ function locateOrientation(app1: Bytes): OrientationSite | null {
 
   const ifd0 = tiff + read32(tiff + 4)
   if (ifd0 + 2 > app1.length) return null
-  const entries = read16(ifd0)
+  return { littleEndian, tiff, ifd0, read16, read32 }
+}
+
+/** Visits an IFD's entries as (tag, type, entryOffset) until `visit` returns true. */
+function eachEntry(
+  r: TiffReader,
+  app1: Bytes,
+  ifd: number,
+  visit: (tag: number, type: number, entry: number) => boolean | void,
+): void {
+  const entries = r.read16(ifd)
   for (let i = 0; i < entries; i++) {
-    const entry = ifd0 + 2 + i * 12
-    if (entry + 12 > app1.length) break
-    if (read16(entry) === TAG_ORIENTATION) return { littleEndian, entryAt: entry }
+    const entry = ifd + 2 + i * 12
+    if (entry + 12 > app1.length) return
+    if (visit(r.read16(entry), r.read16(entry + 2), entry) === true) return
   }
-  return { littleEndian, entryAt: null }
+}
+
+interface OrientationSite {
+  littleEndian: boolean
+  /** Offset of the Orientation IFD entry, or null when the tag is absent. */
+  entryAt: number | null
+}
+
+/** Finds the Orientation entry inside an APP1 segment's IFD0, without reading its value. */
+function locateOrientation(app1: Bytes): OrientationSite | null {
+  const r = tiffReader(app1)
+  if (!r) return null
+  let entryAt: number | null = null
+  eachEntry(r, app1, r.ifd0, (tag, _type, entry) => {
+    if (tag === TAG_ORIENTATION) {
+      entryAt = entry
+      return true
+    }
+  })
+  return { littleEndian: r.littleEndian, entryAt }
 }
 
 /** The APP1 segment's Orientation value; 1 (upright) when the tag is absent, per EXIF. */
@@ -164,4 +200,45 @@ export function insertApp1(jpeg: Bytes, app1: Bytes): Bytes {
   out.set(app1, at)
   out.set(jpeg.subarray(at), at + app1.length)
   return out
+}
+
+
+/**
+ * FocalLength in millimetres, or null when the photo does not carry one.
+ *
+ * It normally lives in the Exif sub-IFD behind tag 0x8769 rather than in IFD0, so both are
+ * searched. Absence is meaningful: a photo captured through the browser rather than picked from
+ * the library arrives without it (see docs/superpowers/probes/2026-09-12-ios-photo-picker.md),
+ * and COLMAP then falls back to a guessed focal prior.
+ */
+export function readFocalLength(app1: Bytes): number | null {
+  const r = tiffReader(app1)
+  if (!r) return null
+
+  const rationalAt = (entry: number): number | null => {
+    const at = r.tiff + r.read32(entry + 8)
+    if (at + 8 > app1.length) return null
+    const denominator = r.read32(at + 4)
+    return denominator === 0 ? null : r.read32(at) / denominator
+  }
+
+  let focal: number | null = null
+  let subIfd = 0
+  eachEntry(r, app1, r.ifd0, (tag, type, entry) => {
+    if (tag === TAG_FOCAL_LENGTH && type === TYPE_RATIONAL) {
+      focal = rationalAt(entry)
+      return true
+    }
+    if (tag === TAG_EXIF_IFD) subIfd = r.tiff + r.read32(entry + 8)
+  })
+  if (focal !== null) return focal
+  if (subIfd === 0 || subIfd + 2 > app1.length) return null
+
+  eachEntry(r, app1, subIfd, (tag, type, entry) => {
+    if (tag === TAG_FOCAL_LENGTH && type === TYPE_RATIONAL) {
+      focal = rationalAt(entry)
+      return true
+    }
+  })
+  return focal
 }

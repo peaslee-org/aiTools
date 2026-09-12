@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest"
 import type { Bytes } from "@/lib/exifJpeg"
-import { extractApp1, insertApp1, readOrientation, readStoredSize, setOrientation } from "@/lib/exifJpeg"
+import { extractApp1, insertApp1, readFocalLength, readOrientation, readStoredSize, setOrientation } from "@/lib/exifJpeg"
 
 const ORIENTATION = 0x0112
 const FOCAL = 0x920a
+const EXIF_IFD = 0x8769
 
 const bytes = (values: number[]): Bytes => new Uint8Array(values)
 
@@ -15,26 +16,42 @@ const be16 = (n: number) => [(n >> 8) & 0xff, n & 0xff]
  * A little-endian TIFF block: IFD0 with an optional SHORT Orientation and an optional
  * RATIONAL FocalLength whose value sits past the end of the IFD.
  */
-function buildTiff(tags: { orientation?: number; focal?: [number, number] }): number[] {
+interface Tags {
+  orientation?: number
+  focal?: [number, number]
+  /** Where a real iPhone puts FocalLength: the Exif sub-IFD behind tag 0x8769, not IFD0. */
+  focalInSubIfd?: boolean
+}
+
+function buildTiff(tags: Tags): number[] {
   const shorts: Array<[number, number]> = []
   if (tags.orientation !== undefined) shorts.push([ORIENTATION, tags.orientation])
   const hasFocal = tags.focal !== undefined
+  const viaSubIfd = hasFocal && tags.focalInSubIfd === true
   const count = shorts.length + (hasFocal ? 1 : 0)
-  const rationalOffset = 8 + 2 + count * 12 + 4
+  const afterIfd0 = 8 + 2 + count * 12 + 4
+  const subIfdOffset = viaSubIfd ? afterIfd0 : 0
+  const rationalOffset = viaSubIfd ? subIfdOffset + 2 + 12 + 4 : afterIfd0
 
   const out: number[] = [0x49, 0x49, ...le16(42), ...le32(8), ...le16(count)]
   for (const [tag, value] of shorts) {
     out.push(...le16(tag), ...le16(3), ...le32(1), ...le16(value), 0, 0)
   }
-  if (hasFocal) out.push(...le16(FOCAL), ...le16(5), ...le32(1), ...le32(rationalOffset))
+  if (viaSubIfd) out.push(...le16(EXIF_IFD), ...le16(4), ...le32(1), ...le32(subIfdOffset))
+  else if (hasFocal) out.push(...le16(FOCAL), ...le16(5), ...le32(1), ...le32(rationalOffset))
   out.push(...le32(0)) // no IFD1
+  if (viaSubIfd) {
+    out.push(...le16(1))
+    out.push(...le16(FOCAL), ...le16(5), ...le32(1), ...le32(rationalOffset))
+    out.push(...le32(0))
+  }
   if (hasFocal) out.push(...le32(tags.focal![0]), ...le32(tags.focal![1]))
   return out
 }
 
 const EXIF_SIG = [0x45, 0x78, 0x69, 0x66, 0, 0] // "Exif\0\0"
 
-function app1Segment(tags: { orientation?: number; focal?: [number, number] }): number[] {
+function app1Segment(tags: Tags): number[] {
   const payload = [...EXIF_SIG, ...buildTiff(tags)]
   return [0xff, 0xe1, ...be16(payload.length + 2), ...payload]
 }
@@ -174,5 +191,23 @@ describe("readStoredSize", () => {
     const jpeg = bytes([0xff, 0xd8, ...APP0_JFIF, ...dht, ...SCAN])
 
     expect(readStoredSize(jpeg)).toBeNull()
+  })
+})
+
+describe("readFocalLength", () => {
+  it("finds it in the Exif sub-IFD, where a phone actually puts it", () => {
+    // The probe measured f4.25 on both phones; IFD0 alone would have found nothing, so a
+    // reader that skipped the sub-IFD would report every real photo as focal-less.
+    const app1 = bytes(app1Segment({ orientation: 6, focal: [425, 100], focalInSubIfd: true }))
+
+    expect(readFocalLength(app1)).toBeCloseTo(4.25)
+  })
+
+  it("finds it in IFD0 when an encoder puts it there instead", () => {
+    expect(readFocalLength(bytes(app1Segment({ focal: [425, 100] })))).toBeCloseTo(4.25)
+  })
+
+  it("reports absence, which is what an in-browser camera capture looks like", () => {
+    expect(readFocalLength(bytes(app1Segment({ orientation: 1 })))).toBeNull()
   })
 })

@@ -2,6 +2,7 @@ import { defineStore } from "pinia"
 import { computed, reactive, ref } from "vue"
 import axios from "axios"
 import { jpegName, prepareImage } from "@/lib/prepareImage"
+import { holdScreenAwake } from "@/lib/wakeLock"
 import * as api from "@/lib/photogrammetryApi"
 import type { JobPhotosResponse, MeshUrls, PhotogrammetryJob, SamplePhotos } from "@/types"
 
@@ -72,6 +73,9 @@ export const usePhotogrammetryStore = defineStore("photogrammetry", () => {
   /** Create → upload every file (4 at a time) → confirm → poll. Returns the job id. */
   async function submitScan(name: string, files: File[], removeBackground = false): Promise<string> {
     let job_id: string
+    // Minutes of uploading: if the phone sleeps, the tab is suspended and the in-memory File
+    // handles go with it, stranding the job in `pending` with nothing to resume from.
+    const awake = await holdScreenAwake()
     try {
       // The re-encode renames to .jpg, and the API validates on extension, so the job has to be
       // registered under the prepared names — which are known without doing the work yet.
@@ -110,6 +114,7 @@ export const usePhotogrammetryStore = defineStore("photogrammetry", () => {
       throw err
     } finally {
       uploadProgress.value = null
+      await awake.release()
     }
     return job_id
   }

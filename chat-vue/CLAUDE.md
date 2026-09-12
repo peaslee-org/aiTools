@@ -106,6 +106,11 @@ src/
                        EXIF spliced back on, so COLMAP keeps its focal prior. rotationFor() decides
                        rotation by comparing the JPEG frame header's stored size with what the
                        decoder returned, rather than trusting Safari to honour EXIF
+    wakeLock.ts        holdScreenAwake(): screen wake lock held across submitScan, re-acquired on
+                       visibilitychange (the platform drops it whenever the page hides). A no-op
+                       where unsupported or refused — an upload never fails over it. Needs a
+                       secure context + Safari 16.4; stops the phone sleeping mid-scan, which
+                       would suspend the tab and strand the job in `pending`
     exifJpeg.ts        Pure JPEG byte surgery behind it: extractApp1 / readOrientation /
                        readStoredSize / readFocalLength (chases the 0x8769 Exif sub-IFD, where
                        phones put it) / setOrientation / insertApp1 (DOM-free, so it unit-tests)
@@ -127,7 +132,7 @@ src/
                        static AVAILABLE_MODELS list on error
     transcribe.ts      Speaker profiles + samples + transcription jobs state; polling for
                        in-flight jobs (5 s interval) and processing samples (3 s interval)
-    photogrammetry.ts   Scan jobs state, concurrent uploads, 3 s polling, presigned mesh URL cache,
+    photogrammetry.ts   Scan jobs state, concurrent uploads (screen held awake throughout), 3 s polling, presigned mesh URL cache,
                        per-job photo cache (fetchJobPhotos → {photos, matched, total}; force refetch;
                        a listing smaller than the job's image_count — upload still in flight — is
                        never cached),

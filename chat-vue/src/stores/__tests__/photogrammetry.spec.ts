@@ -19,7 +19,10 @@ vi.mock("@/lib/prepareImage", async (importOriginal) => ({
   prepareImage: vi.fn(),
 }))
 
+vi.mock("@/lib/wakeLock", () => ({ holdScreenAwake: vi.fn() }))
+
 import * as api from "@/lib/photogrammetryApi"
+import * as wake from "@/lib/wakeLock"
 import * as prepare from "@/lib/prepareImage"
 import { jpegName } from "@/lib/prepareImage"
 import { usePhotogrammetryStore } from "@/stores/photogrammetry"
@@ -97,6 +100,10 @@ describe("photogrammetry store — submitScan", () => {
     vi.mocked(prepare.prepareImage).mockReset().mockImplementation(
       async (file: File) => new File(["prepared:" + file.name], jpegName(file.name)),
     )
+    vi.mocked(wake.holdScreenAwake).mockReset().mockResolvedValue({
+      held: true,
+      release: vi.fn().mockResolvedValue(undefined),
+    })
   })
 
   function heicFiles(count: number): File[] {
@@ -161,5 +168,48 @@ describe("photogrammetry store — submitScan", () => {
 
     expect(peak).toBe(1)
     expect(prepare.prepareImage).toHaveBeenCalledTimes(6)
+  })
+})
+
+describe("photogrammetry store — keeping the screen awake", () => {
+  const uploadsFor = (names: string[]) =>
+    names.map((filename, i) => ({ filename, key: `k${i}`, url: `https://s3/${i}` }))
+  const file = () => [new File(["raw"], "IMG_0001.jpg", { type: "image/jpeg" })]
+
+  let release: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    release = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(wake.holdScreenAwake).mockReset().mockResolvedValue({ held: true, release })
+    vi.mocked(prepare.prepareImage).mockReset().mockImplementation(
+      async (f: File) => new File(["prepared"], jpegName(f.name)),
+    )
+    vi.mocked(api.confirmJob).mockReset().mockResolvedValue(undefined)
+    vi.mocked(api.uploadToS3).mockReset().mockResolvedValue(undefined)
+    vi.mocked(api.createJob).mockReset().mockResolvedValue({
+      job_id: "j1",
+      uploads: uploadsFor(["IMG_0001.jpg"]),
+    } as never)
+  })
+
+  it("holds the screen awake for the upload and lets go afterwards", async () => {
+    // The phone locking mid-scan suspends the tab, losing the File handles and stranding the
+    // job in `pending` — there is nothing to resume from.
+    const store = usePhotogrammetryStore()
+
+    await store.submitScan("Scan", file())
+
+    expect(wake.holdScreenAwake).toHaveBeenCalled()
+    expect(release).toHaveBeenCalled()
+  })
+
+  it("lets go of the lock even when the scan fails", async () => {
+    vi.mocked(api.uploadToS3).mockRejectedValue(new Error("network gone"))
+    const store = usePhotogrammetryStore()
+
+    await expect(store.submitScan("Scan", file())).rejects.toThrow()
+
+    expect(release).toHaveBeenCalled()
   })
 })
